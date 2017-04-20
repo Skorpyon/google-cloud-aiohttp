@@ -209,18 +209,18 @@ class ACL(object):
     def __init__(self):
         self.entities = {}
 
-    def _ensure_loaded(self):
+    async def _ensure_loaded(self):
         """Load if not already loaded."""
         if not self.loaded:
-            self.reload()
+            await self.reload()
 
     def reset(self):
         """Remove all entities from the ACL, and clear the ``loaded`` flag."""
         self.entities.clear()
         self.loaded = False
 
-    def __iter__(self):
-        self._ensure_loaded()
+    async def __aiter__(self):
+        await self._ensure_loaded()
 
         for entity in self.entities.values():
             for role in entity.get_roles():
@@ -260,7 +260,7 @@ class ACL(object):
         entity.grant(role)
         return entity
 
-    def has_entity(self, entity):
+    async def has_entity(self, entity):
         """Returns whether or not this ACL has any entries for an entity.
 
         :type entity: :class:`_ACLEntity`
@@ -269,10 +269,10 @@ class ACL(object):
         :rtype: bool
         :returns: True of the entity exists in the ACL.
         """
-        self._ensure_loaded()
+        await self._ensure_loaded()
         return str(entity) in self.entities
 
-    def get_entity(self, entity, default=None):
+    async def get_entity(self, entity, default=None):
         """Gets an entity object from the ACL.
 
         :type entity: :class:`_ACLEntity` or string
@@ -286,19 +286,19 @@ class ACL(object):
         :returns: The corresponding entity or the value provided
                   to ``default``.
         """
-        self._ensure_loaded()
+        await self._ensure_loaded()
         return self.entities.get(str(entity), default)
 
-    def add_entity(self, entity):
+    async def add_entity(self, entity):
         """Add an entity to the ACL.
 
         :type entity: :class:`_ACLEntity`
         :param entity: The entity to add to this ACL.
         """
-        self._ensure_loaded()
+        await self._ensure_loaded()
         self.entities[str(entity)] = entity
 
-    def entity(self, entity_type, identifier=None):
+    async def entity(self, entity_type, identifier=None):
         """Factory method for creating an Entity.
 
         If an entity with the same type and identifier already exists,
@@ -318,13 +318,14 @@ class ACL(object):
         :returns: A new Entity or a reference to an existing identical entity.
         """
         entity = _ACLEntity(entity_type=entity_type, identifier=identifier)
-        if self.has_entity(entity):
-            entity = self.get_entity(entity)
+        has_entity = await self.has_entity(entity)
+        if has_entity:
+            entity = await self.get_entity(entity)
         else:
-            self.add_entity(entity)
+            await self.add_entity(entity)
         return entity
 
-    def user(self, identifier):
+    async def user(self, identifier):
         """Factory method for a user Entity.
 
         :type identifier: str
@@ -333,9 +334,10 @@ class ACL(object):
         :rtype: :class:`_ACLEntity`
         :returns: An Entity corresponding to this user.
         """
-        return self.entity('user', identifier=identifier)
+        entity = await self.entity('user', identifier=identifier)
+        return entity
 
-    def group(self, identifier):
+    async def group(self, identifier):
         """Factory method for a group Entity.
 
         :type identifier: str
@@ -344,9 +346,10 @@ class ACL(object):
         :rtype: :class:`_ACLEntity`
         :returns: An Entity corresponding to this group.
         """
-        return self.entity('group', identifier=identifier)
+        entity = await self.entity('group', identifier=identifier)
+        return entity
 
-    def domain(self, domain):
+    async def domain(self, domain):
         """Factory method for a domain Entity.
 
         :type domain: str
@@ -355,31 +358,34 @@ class ACL(object):
         :rtype: :class:`_ACLEntity`
         :returns: An entity corresponding to this domain.
         """
-        return self.entity('domain', identifier=domain)
+        entity = await self.entity('domain', identifier=domain)
+        return entity
 
-    def all(self):
+    async def all(self):
         """Factory method for an Entity representing all users.
 
         :rtype: :class:`_ACLEntity`
         :returns: An entity representing all users.
         """
-        return self.entity('allUsers')
+        entity = await self.entity('allUsers')
+        return entity
 
-    def all_authenticated(self):
+    async def all_authenticated(self):
         """Factory method for an Entity representing all authenticated users.
 
         :rtype: :class:`_ACLEntity`
         :returns: An entity representing all authenticated users.
         """
-        return self.entity('allAuthenticatedUsers')
+        entity = await self.entity('allAuthenticatedUsers')
+        return entity
 
-    def get_entities(self):
+    async def get_entities(self):
         """Get a list of all Entity objects.
 
         :rtype: list of :class:`_ACLEntity` objects
         :returns: A list of all Entity objects.
         """
-        self._ensure_loaded()
+        await self._ensure_loaded()
         return list(self.entities.values())
 
     @property
@@ -402,7 +408,7 @@ class ACL(object):
             client = self.client
         return client
 
-    def reload(self, client=None):
+    async def reload(self, client=None):
         """Reload the ACL data from Cloud Storage.
 
         :type client: :class:`~google.cloud.storage.client.Client` or
@@ -415,12 +421,12 @@ class ACL(object):
 
         self.entities.clear()
 
-        found = client._connection.api_request(method='GET', path=path)
+        found = await client._connection.api_request(method='GET', path=path)
         self.loaded = True
         for entry in found.get('items', ()):
             self.add_entity(self.entity_from_dict(entry))
 
-    def _save(self, acl, predefined, client):
+    async def _save(self, acl, predefined, client):
         """Helper for :meth:`save` and :meth:`save_predefined`.
 
         :type acl: :class:`google.cloud.storage.acl.ACL`, or a compatible list.
@@ -444,7 +450,7 @@ class ACL(object):
 
         path = self.save_path
         client = self._require_client(client)
-        result = client._connection.api_request(
+        result = await client._connection.api_request(
             method='PATCH',
             path=path,
             data={self._URL_PATH_ELEM: list(acl)},
@@ -454,7 +460,7 @@ class ACL(object):
             self.add_entity(self.entity_from_dict(entry))
         self.loaded = True
 
-    def save(self, acl=None, client=None):
+    async def save(self, acl=None, client=None):
         """Save this ACL for the current bucket.
 
         :type acl: :class:`google.cloud.storage.acl.ACL`, or a compatible list.
@@ -473,9 +479,9 @@ class ACL(object):
             save_to_backend = True
 
         if save_to_backend:
-            self._save(acl, None, client)
+            await self._save(acl, None, client)
 
-    def save_predefined(self, predefined, client=None):
+    async def save_predefined(self, predefined, client=None):
         """Save this ACL for the current bucket using a predefined ACL.
 
         :type predefined: str
@@ -495,9 +501,9 @@ class ACL(object):
         if predefined not in self.PREDEFINED_JSON_ACLS:
             raise ValueError("Invalid predefined ACL: %s" % (predefined,))
 
-        self._save(None, predefined, client)
+        await self._save(None, predefined, client)
 
-    def clear(self, client=None):
+    async def clear(self, client=None):
         """Remove all ACL entries.
 
         Note that this won't actually remove *ALL* the rules, but it
@@ -510,7 +516,7 @@ class ACL(object):
         :param client: Optional. The client to use.  If not passed, falls back
                        to the ``client`` stored on the ACL's parent.
         """
-        self.save([], client=client)
+        await self.save([], client=client)
 
 
 class BucketACL(ACL):

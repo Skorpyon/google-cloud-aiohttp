@@ -20,10 +20,9 @@ import email.mime.multipart as mime_multipart
 import email.mime.nonmultipart as mime_nonmultipart
 import mimetypes
 import os
+import io
 
-import httplib2
-import six
-import http_client
+from http import client as http_client
 
 from google.cloud._helpers import _to_bytes
 from google.cloud.streaming.transfer import _Transfer as SyncTransfer
@@ -124,12 +123,12 @@ class Download(_Transfer):
     :param kwds:  keyword arguments:  all except ``total_size`` are passed
                   through to :meth:`_Transfer.__init__()`.
     """
-    _ACCEPTABLE_STATUSES = set((
+    _ACCEPTABLE_STATUSES = (
         http_client.OK,
         http_client.NO_CONTENT,
         http_client.PARTIAL_CONTENT,
         http_client.REQUESTED_RANGE_NOT_SATISFIABLE,
-    ))
+    )
 
     def __init__(self, stream, **kwds):
         total_size = kwds.pop('total_size', None)
@@ -280,7 +279,7 @@ class Download(_Transfer):
         # Unless the user has requested otherwise, we want to just
         # go ahead and pump the bytes now.
         if self.auto_transfer:
-            self.stream_file(use_chunks=True, headers=http_request.headers)
+            await self.stream_file(use_chunks=True, headers=http_request.headers)
 
     def _normalize_start_end(self, start, end=None):
         """Validate / fix up byte range.
@@ -402,7 +401,7 @@ class Download(_Transfer):
             self.bytes_http, request, retries=self.num_retries)
         return resp
 
-    def _process_response(self, response):
+    async def _process_response(self, response):
         """Update attribtes and writing stream, based on response.
 
         :type response: :class:`google.cloud.streaming.http_wrapper.Response`
@@ -425,7 +424,8 @@ class Download(_Transfer):
                 raise TransferRetryError(response.content)
         if response.status_code in (http_client.OK,
                                     http_client.PARTIAL_CONTENT):
-            self.stream.write(response.content)
+            response_body = response.content
+            self.stream.write(response_body)
             self._progress += response.length
             if response.info and 'content-encoding' in response.info:
                 self._encoding = response.info['content-encoding']
@@ -436,7 +436,7 @@ class Download(_Transfer):
             self.stream.write('')
         return response
 
-    def get_range(self, start, end=None, use_chunks=True):
+    async def get_range(self, start, end=None, use_chunks=True):
         """Retrieve a given byte range from this download, inclusive.
 
         Writes retrieved bytes into :attr:`stream`.
@@ -475,18 +475,18 @@ class Download(_Transfer):
                progress <= end_byte):
             end_byte = self._compute_end_byte(progress, end=end_byte,
                                               use_chunks=use_chunks)
-            response = self._get_chunk(progress, end_byte)
+            response = await self._get_chunk(progress, end_byte)
             if not progress_end_normalized:
                 self._set_total(response.info)
                 progress, end_byte = self._normalize_start_end(start, end)
                 progress_end_normalized = True
-            response = self._process_response(response)
+            response = await self._process_response(response)
             progress += response.length
             if response.length == 0:
                 raise TransferRetryError(
                     'Zero bytes unexpectedly returned in download response')
 
-    def stream_file(self, use_chunks=True, headers=None):
+    async def stream_file(self, use_chunks=True, headers=None):
         """Stream the entire download.
 
         Writes retrieved bytes into :attr:`stream`.
@@ -507,11 +507,11 @@ class Download(_Transfer):
             else:
                 end_byte = self._compute_end_byte(self.progress,
                                                   use_chunks=use_chunks)
-                response = self._get_chunk(self.progress, end_byte,
-                                           headers=headers)
+                response = await self._get_chunk(self.progress, end_byte,
+                                                 headers=headers)
             if self.total_size is None:
                 self._set_total(response.info)
-            response = self._process_response(response)
+            response = await self._process_response(response)
             if (response.status_code == http_client.OK or
                     self.progress >= self.total_size):
                 break
@@ -798,11 +798,8 @@ class Upload(_Transfer):
         msg_root.attach(msg)
 
         # NOTE: generate multipart message as bytes, not text
-        stream = six.BytesIO()
-        if six.PY3:  # pragma: NO COVER  Python3
-            generator_class = email_generator.BytesGenerator
-        else:
-            generator_class = email_generator.Generator
+        stream = io.BytesIO()
+        generator_class = email_generator.BytesGenerator
         generator = generator_class(stream, mangle_from_=False)
         generator.flatten(msg_root, unixfrom=False)
         http_request.body = stream.getvalue()
@@ -824,7 +821,7 @@ class Upload(_Transfer):
             http_request.headers[
                 'X-Upload-Content-Length'] = str(self.total_size)
 
-    def refresh_upload_state(self):
+    async def refresh_upload_state(self):
         """Refresh the state of a resumable upload via query to the back-end.
         """
         if self.strategy != RESUMABLE_UPLOAD:
@@ -846,7 +843,7 @@ class Upload(_Transfer):
         refresh_request = Request(
             url=self.url, http_method='PUT',
             headers={'Content-Range': 'bytes */*'})
-        refresh_response = make_api_request(
+        refresh_response = await make_api_request(
             self.http, refresh_request, redirections=0,
             retries=self.num_retries)
         range_header = self._get_range_header(refresh_response)
@@ -893,7 +890,7 @@ class Upload(_Transfer):
         # https://cloud.google.com/storage/docs/json_api/v1/how-tos/upload#chunking
         return response.info.get('Range', response.info.get('range'))
 
-    def initialize_upload(self, http_request, http):
+    async def initialize_upload(self, http_request, http):
         """Initialize this upload from the given http_request.
 
         :type http_request: :class:`~.streaming.http_wrapper.Request`
@@ -914,8 +911,8 @@ class Upload(_Transfer):
         if self.strategy != RESUMABLE_UPLOAD:
             return
         self._ensure_uninitialized()
-        http_response = make_api_request(http, http_request,
-                                         retries=self.num_retries)
+        http_response = await make_api_request(http, http_request,
+                                               retries=self.num_retries)
         if http_response.status_code != http_client.OK:
             raise HttpError.from_response(http_response)
 
@@ -929,7 +926,8 @@ class Upload(_Transfer):
         # Unless the user has requested otherwise, we want to just
         # go ahead and pump the bytes now.
         if self.auto_transfer:
-            return self.stream_file(use_chunks=True)
+            resp = await self.stream_file(use_chunks=True)
+            return resp
         else:
             return http_response
 
@@ -965,7 +963,7 @@ class Upload(_Transfer):
                 'Server requires chunksize to be a multiple of %d',
                 self._server_chunk_granularity)
 
-    def stream_file(self, use_chunks=True):
+    async def stream_file(self, use_chunks=True):
         """Upload the stream.
 
         :type use_chunks: bool
@@ -985,8 +983,8 @@ class Upload(_Transfer):
             self._validate_chunksize(self.chunksize)
         self._ensure_initialized()
         while not self.complete:
-            response = send_func(self.stream.tell())
-            if response.status_code in (http_client.OK, http_client.CREATED):
+            response = await send_func(self.stream.tell())
+            if response.status in (http_client.OK, http_client.CREATED):
                 self._complete = True
                 break
             self._progress = self._last_byte(response.info['range'])
@@ -1007,7 +1005,7 @@ class Upload(_Transfer):
                         (int(end_pos) - int(current_pos)))
         return response
 
-    def _send_media_request(self, request, end):
+    async def _send_media_request(self, request, end):
         """Peform API upload request.
 
         Helper for _send_media_body & _send_chunk:
@@ -1023,7 +1021,7 @@ class Upload(_Transfer):
         :raises: :exc:`~.streaming.exceptions.HttpError` if the status
                  code from the response indicates an error.
         """
-        response = make_api_request(
+        response = await make_api_request(
             self.bytes_http, request, retries=self.num_retries)
         if response.status_code not in (http_client.OK, http_client.CREATED,
                                         RESUME_INCOMPLETE):
@@ -1038,7 +1036,7 @@ class Upload(_Transfer):
                 self.stream.seek(last_byte)
         return response
 
-    def _send_media_body(self, start):
+    async def _send_media_body(self, start):
         """Send the entire stream in a single request.
 
         Helper for :meth:`stream_file`:
@@ -1066,9 +1064,10 @@ class Upload(_Transfer):
 
         request.headers['Content-Range'] = range_string
 
-        return self._send_media_request(request, self.total_size)
+        resp = await self._send_media_request(request, self.total_size)
+        return resp
 
-    def _send_chunk(self, start):
+    async def _send_chunk(self, start):
         """Send a chunk of the stream.
 
         Helper for :meth:`stream_file`:
@@ -1114,4 +1113,5 @@ class Upload(_Transfer):
 
         request.headers['Content-Range'] = range_string
 
-        return self._send_media_request(request, end)
+        resp = await self._send_media_request(request, end)
+        return resp

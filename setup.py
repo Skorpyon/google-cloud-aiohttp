@@ -44,7 +44,6 @@ setup(
     ],
     zip_safe=True,
     install_requires=[
-        'google-cloud-core==0.24.1',
         'google-cloud-storage >= 1.0.0, < 2.0dev',
         'ujson==1.35',
         'aiohttp>=2.0.7'

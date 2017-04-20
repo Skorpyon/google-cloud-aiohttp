@@ -17,12 +17,16 @@
 
 from google.cloud._helpers import _LocalStack
 from google.cloud.exceptions import NotFound
-from google.cloud.iterator import HTTPIterator
+
+from aiogoogle.cloud.iterator import HTTPIterator
+from aiogoogle.cloud.client import ClientWithProject
 
 from aiogoogle.cloud.storage._http import Connection
-from aiogoogle.cloud.client import ClientWithProject
 from aiogoogle.cloud.storage.batch import Batch
 from aiogoogle.cloud.storage.bucket import Bucket
+
+
+__all__ = ['Client', ]
 
 
 class Client(ClientWithProject):
@@ -54,10 +58,10 @@ class Client(ClientWithProject):
              'https://www.googleapis.com/auth/devstorage.read_write')
     """The scopes required for authenticating as a Cloud Storage consumer."""
 
-    def __init__(self, project=None, credentials=None, _http=None):
+    def __init__(self, project=None, credentials=None, _http=None, loop=None):
         self._base_connection = None
         super(Client, self).__init__(project=project, credentials=credentials,
-                                     _http=_http)
+                                     _http=_http, loop=loop)
         self._connection = Connection(self)
         self._batch_stack = _LocalStack()
 
@@ -149,7 +153,7 @@ class Client(ClientWithProject):
         """
         return Batch(client=self)
 
-    def get_bucket(self, bucket_name):
+    async def get_bucket(self, bucket_name):
         """Get a bucket by name.
 
         If the bucket isn't found, this will raise a
@@ -171,10 +175,10 @@ class Client(ClientWithProject):
         :raises: :class:`google.cloud.exceptions.NotFound`
         """
         bucket = Bucket(self, name=bucket_name)
-        bucket.reload(client=self)
+        await bucket.reload(client=self)
         return bucket
 
-    def lookup_bucket(self, bucket_name):
+    async def lookup_bucket(self, bucket_name):
         """Get a bucket by name, returning None if not found.
 
         You can use this if you would rather check for a None value
@@ -191,11 +195,12 @@ class Client(ClientWithProject):
         :returns: The bucket matching the name provided or None if not found.
         """
         try:
-            return self.get_bucket(bucket_name)
+            bucket = await self.get_bucket(bucket_name)
+            return bucket
         except NotFound:
             return None
 
-    def create_bucket(self, bucket_name):
+    async def create_bucket(self, bucket_name):
         """Create a new bucket.
 
         For example:
@@ -216,11 +221,11 @@ class Client(ClientWithProject):
         :returns: The newly created bucket.
         """
         bucket = Bucket(self, name=bucket_name)
-        bucket.create(client=self)
+        await bucket.create(client=self)
         return bucket
 
-    def list_buckets(self, max_results=None, page_token=None, prefix=None,
-                     projection='noAcl', fields=None):
+    def list_buckets(self, max_results=None, page_token=None,
+                     prefix=None, projection='noAcl', fields=None):
         """Get all buckets in the project associated to the client.
 
         This will not populate the list of blobs available in each

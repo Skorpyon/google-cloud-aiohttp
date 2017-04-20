@@ -25,7 +25,8 @@ from google.cloud._helpers import _datetime_to_rfc3339
 from google.cloud._helpers import _NOW
 from google.cloud._helpers import _rfc3339_to_datetime
 from google.cloud.exceptions import NotFound
-from google.cloud.iterator import HTTPIterator
+
+from aiogoogle.cloud.iterator import HTTPIterator
 
 from aiogoogle.cloud.storage._helpers import _PropertyMixin
 from aiogoogle.cloud.storage._helpers import _scalar_property
@@ -147,7 +148,7 @@ class Bucket(_PropertyMixin):
         return Blob(name=blob_name, bucket=self, chunk_size=chunk_size,
                     encryption_key=encryption_key)
 
-    def exists(self, client=None):
+    async def exists(self, client=None):
         """Determines whether or not this bucket exists.
 
         :type client: :class:`~google.cloud.storage.client.Client` or
@@ -165,7 +166,7 @@ class Bucket(_PropertyMixin):
             query_params = {'fields': 'name'}
             # We intentionally pass `_target_object=None` since fields=name
             # would limit the local properties.
-            client._connection.api_request(
+            await client._connection.api_request(
                 method='GET', path=self.path,
                 query_params=query_params, _target_object=None)
             # NOTE: This will not fail immediately in a batch. However, when
@@ -175,7 +176,7 @@ class Bucket(_PropertyMixin):
         except NotFound:
             return False
 
-    def create(self, client=None):
+    async def create(self, client=None):
         """Creates current bucket.
 
         If the bucket already exists, will raise
@@ -192,7 +193,7 @@ class Bucket(_PropertyMixin):
         query_params = {'project': client.project}
         properties = {key: self._properties[key] for key in self._changes}
         properties['name'] = self.name
-        api_response = client._connection.api_request(
+        api_response = await client._connection.api_request(
             method='POST', path='/b', query_params=query_params,
             data=properties, _target_object=self)
         self._set_properties(api_response)
@@ -227,7 +228,7 @@ class Bucket(_PropertyMixin):
 
         return self.path_helper(self.name)
 
-    def get_blob(self, blob_name, client=None):
+    async def get_blob(self, blob_name, client=None):
         """Get a blob object by name.
 
         This will return None if the blob doesn't exist:
@@ -250,7 +251,7 @@ class Bucket(_PropertyMixin):
         client = self._require_client(client)
         blob = Blob(bucket=self, name=blob_name)
         try:
-            response = client._connection.api_request(
+            response = await client._connection.api_request(
                 method='GET', path=blob.path, _target_object=blob)
             # NOTE: We assume response.get('name') matches `blob_name`.
             blob._set_properties(response)
@@ -331,7 +332,7 @@ class Bucket(_PropertyMixin):
         iterator.prefixes = set()
         return iterator
 
-    def delete(self, force=False, client=None):
+    async def delete(self, force=False, client=None):
         """Delete this bucket.
 
         The bucket **must** be empty in order to submit a delete request. If
@@ -380,10 +381,10 @@ class Bucket(_PropertyMixin):
         # We intentionally pass `_target_object=None` since a DELETE
         # request has no response value (whether in a standard request or
         # in a batch request).
-        client._connection.api_request(
+        await client._connection.api_request(
             method='DELETE', path=self.path, _target_object=None)
 
-    def delete_blob(self, blob_name, client=None):
+    async def delete_blob(self, blob_name, client=None):
         """Deletes a blob from the current bucket.
 
         If the blob isn't found (backend 404), raises a
@@ -417,10 +418,10 @@ class Bucket(_PropertyMixin):
         # We intentionally pass `_target_object=None` since a DELETE
         # request has no response value (whether in a standard request or
         # in a batch request).
-        client._connection.api_request(
+        await client._connection.api_request(
             method='DELETE', path=blob_path, _target_object=None)
 
-    def delete_blobs(self, blobs, on_error=None, client=None):
+    async def delete_blobs(self, blobs, on_error=None, client=None):
         """Deletes a list of blobs from the current bucket.
 
         Uses :meth:`delete_blob` to delete each individual blob.
@@ -445,17 +446,17 @@ class Bucket(_PropertyMixin):
         for blob in blobs:
             try:
                 blob_name = blob
-                if not isinstance(blob_name, six.string_types):
+                if not isinstance(blob_name, str):
                     blob_name = blob.name
-                self.delete_blob(blob_name, client=client)
+                await self.delete_blob(blob_name, client=client)
             except NotFound:
                 if on_error is not None:
                     on_error(blob)
                 else:
                     raise
 
-    def copy_blob(self, blob, destination_bucket, new_name=None,
-                  client=None, preserve_acl=True):
+    async def copy_blob(self, blob, destination_bucket, new_name=None,
+                        client=None, preserve_acl=True):
         """Copy the given blob to the given bucket, optionally with a new name.
 
         :type blob: :class:`google.cloud.storage.blob.Blob`
@@ -485,14 +486,14 @@ class Bucket(_PropertyMixin):
             new_name = blob.name
         new_blob = Blob(bucket=destination_bucket, name=new_name)
         api_path = blob.path + '/copyTo' + new_blob.path
-        copy_result = client._connection.api_request(
+        copy_result = await client._connection.api_request(
             method='POST', path=api_path, _target_object=new_blob)
         if not preserve_acl:
             new_blob.acl.save(acl={}, client=client)
         new_blob._set_properties(copy_result)
         return new_blob
 
-    def rename_blob(self, blob, new_name, client=None):
+    async def rename_blob(self, blob, new_name, client=None):
         """Rename the given blob using copy and delete operations.
 
         Effectively, copies blob to the same bucket with a new name, then
@@ -518,8 +519,8 @@ class Bucket(_PropertyMixin):
         :rtype: :class:`Blob`
         :returns: The newly-renamed blob.
         """
-        new_blob = self.copy_blob(blob, self, new_name, client=client)
-        blob.delete(client=client)
+        new_blob = await self.copy_blob(blob, self, new_name, client=client)
+        await blob.delete(client=client)
         return new_blob
 
     @property
@@ -803,7 +804,7 @@ class Bucket(_PropertyMixin):
         """
         return self.configure_website(None, None)
 
-    def make_public(self, recursive=False, future=False, client=None):
+    async def make_public(self, recursive=False, future=False, client=None):
         """Make a bucket public.
 
         If ``recursive=True`` and the bucket contains more than 256
@@ -824,20 +825,23 @@ class Bucket(_PropertyMixin):
                        to the ``client`` stored on the current bucket.
         """
         self.acl.all().grant_read()
-        self.acl.save(client=client)
+        await self.acl.save(client=client)
 
         if future:
             doa = self.default_object_acl
             if not doa.loaded:
-                doa.reload(client=client)
+                await doa.reload(client=client)
             doa.all().grant_read()
-            doa.save(client=client)
+            await doa.save(client=client)
 
         if recursive:
-            blobs = list(self.list_blobs(
-                projection='full',
-                max_results=self._MAX_OBJECTS_FOR_ITERATION + 1,
-                client=client))
+            blobs = []
+            for blob in self.list_blobs(
+                    projection='full',
+                    max_results=self._MAX_OBJECTS_FOR_ITERATION + 1,
+                    client=client):
+                blobs.append(blob)
+
             if len(blobs) > self._MAX_OBJECTS_FOR_ITERATION:
                 message = (
                     'Refusing to make public recursively with more than '
@@ -849,7 +853,7 @@ class Bucket(_PropertyMixin):
 
             for blob in blobs:
                 blob.acl.all().grant_read()
-                blob.acl.save(client=client)
+                await blob.acl.save(client=client)
 
     def generate_upload_policy(
             self, conditions, expiration=None, client=None):
@@ -901,9 +905,7 @@ class Bucket(_PropertyMixin):
         if expiration is None:
             expiration = _NOW() + datetime.timedelta(hours=1)
 
-        conditions = conditions + [
-            {'bucket': self.name},
-        ]
+        conditions += [{'bucket': self.name}, ]
 
         policy_document = {
             'expiration': _datetime_to_rfc3339(expiration),

@@ -135,7 +135,7 @@ class JSONConnection(SyncJSONConnection):
                 and ``content`` (a string).
         :returns: The HTTP response object and the content of the response.
         """
-        resp = await self.http.request(uri=url, method=method, headers=headers,
+        resp = await self.http.request(url=url, method=method, headers=headers,
                                        data=data)
         return resp
 
@@ -223,7 +223,7 @@ class JSONConnection(SyncJSONConnection):
 
         string_or_bytes = (str, bytes)
         if content and expect_json and isinstance(content, string_or_bytes):
-            content_type = response.get('content-type', '')
+            content_type = response.headers.get('Content-Type', '')
             if not content_type.startswith('application/json'):
                 raise TypeError('Expected JSON, got %s' % content_type)
             if isinstance(content, bytes):

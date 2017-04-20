@@ -21,13 +21,14 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.parser import Parser
 import io
-import json
+
+import ujson as json
 
 import httplib2
-import six
 
 from google.cloud.exceptions import make_exception
-from google.cloud.storage._http import Connection
+
+from aiogoogle.cloud.storage._http import Connection
 
 
 class MIMEApplicationHTTP(MIMEApplication):
@@ -61,13 +62,7 @@ class MIMEApplicationHTTP(MIMEApplication):
         lines.append('')
         lines.append(body)
         payload = '\r\n'.join(lines)
-        if six.PY2:
-            # email.message.Message is an old-style class, so we
-            # cannot use 'super()'.
-            MIMEApplication.__init__(self, payload, 'http', encode_noop)
-        else:  # pragma: NO COVER  Python3
-            super_init = super(MIMEApplicationHTTP, self).__init__
-            super_init(payload, 'http', encode_noop)
+        super().__init__(payload, 'http', encode_noop)
 
 
 class NoContent(object):
@@ -190,10 +185,7 @@ class Batch(Connection):
             multi.attach(subrequest)
 
         # The `email` package expects to deal with "native" strings
-        if six.PY3:  # pragma: NO COVER  Python3
-            buf = io.StringIO()
-        else:
-            buf = io.BytesIO()
+        buf = io.StringIO()
         generator = Generator(buf, False, 0)
         generator.flatten(multi)
         payload = buf.getvalue()
@@ -230,7 +222,7 @@ class Batch(Connection):
         if exception_args is not None:
             raise make_exception(*exception_args)
 
-    def finish(self):
+    async def finish(self):
         """Submit a single `multipart/mixed` request with deferred requests.
 
         :rtype: list of tuples
@@ -243,7 +235,7 @@ class Batch(Connection):
         # Use the private ``_base_connection`` rather than the property
         # ``_connection``, since the property may be this
         # current batch.
-        response, content = self._client._base_connection._make_request(
+        response, content = await self._client._base_connection._make_request(
             'POST', url, data=body, headers=headers)
         responses = list(_unpack_batch_response(response, content))
         self._finish_futures(responses)
@@ -257,10 +249,10 @@ class Batch(Connection):
         self._client._push_batch(self)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
         try:
             if exc_type is None:
-                self.finish()
+                await self.finish()
         finally:
             self._client._pop_batch()
 
@@ -273,10 +265,10 @@ def _generate_faux_mime_message(parser, response, content):
     # We coerce to bytes to get consistent concat across
     # Py2 and Py3. Percent formatting is insufficient since
     # it includes the b in Py3.
-    if not isinstance(content, six.binary_type):
+    if not isinstance(content, bytes):
         content = content.encode('utf-8')
     content_type = response['content-type']
-    if not isinstance(content_type, six.binary_type):
+    if not isinstance(content_type, bytes):
         content_type = content_type.encode('utf-8')
     faux_message = b''.join([
         b'Content-Type: ',
@@ -285,10 +277,7 @@ def _generate_faux_mime_message(parser, response, content):
         content,
     ])
 
-    if six.PY2:
-        return parser.parsestr(faux_message)
-    else:  # pragma: NO COVER  Python3
-        return parser.parsestr(faux_message.decode('utf-8'))
+    return parser.parsestr(faux_message.decode('utf-8'))
 
 
 def _unpack_batch_response(response, content):

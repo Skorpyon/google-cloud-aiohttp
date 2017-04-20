@@ -14,7 +14,7 @@
 
 """Small helper class to provide a small slice of a stream."""
 
-from six.moves import http_client
+from http import client as http_client
 
 
 class StreamSlice(object):

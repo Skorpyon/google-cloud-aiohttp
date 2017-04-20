@@ -19,15 +19,15 @@ currently :mod:`httplib2`.
 """
 
 import collections
-import contextlib
 import logging
 import socket
 import time
 
 import httplib2
-import six
-from six.moves import http_client
-from six.moves.urllib import parse
+from http import client as http_client
+from urllib import parse
+
+import asyncio_extras
 
 from google.cloud.streaming.exceptions import BadStatusCodeError
 from google.cloud.streaming.exceptions import RequestError
@@ -63,8 +63,8 @@ _RETRYABLE_EXCEPTIONS = (
 )
 
 
-@contextlib.contextmanager
-def _httplib2_debug_level(http_request, level, http=None):
+@asyncio_extras.contextmanager.async_contextmanager
+async def _httplib2_debug_level(http_request, level, http=None):
     """Temporarily change the value of httplib2.debuglevel, if necessary.
 
     If http_request has a `loggable_body` distinct from `body`, then we
@@ -180,7 +180,7 @@ class Request(object):
         else:
             self.headers.pop('content-length', None)
         # This line ensures we don't try to print large requests.
-        if not isinstance(value, (type(None), six.string_types)):
+        if not isinstance(value, (type(None), str)):
             self.loggable_body = '<media body>'
 
 
@@ -308,7 +308,8 @@ def _reset_http_connections(http):
                 del http.connections[conn_key]
 
 
-def _make_api_request_no_retry(http, http_request, redirections=_REDIRECTIONS):
+async def _make_api_request_no_retry(http, http_request,
+                                     redirections=_REDIRECTIONS):
     """Send an HTTP request via the given http instance.
 
     This wrapper exists to handle translation between the plain httplib2
@@ -340,22 +341,26 @@ def _make_api_request_no_retry(http, http_request, redirections=_REDIRECTIONS):
 
     # Custom printing only at debuglevel 4
     new_debuglevel = 4 if httplib2.debuglevel == 4 else 0
-    with _httplib2_debug_level(http_request, new_debuglevel, http=http):
-        info, content = http.request(
-            str(http_request.url), method=str(http_request.http_method),
-            body=http_request.body, headers=http_request.headers,
-            redirections=redirections, connection_type=connection_type)
+    async with _httplib2_debug_level(http_request, new_debuglevel, http=http):
+        response = await http.request(
+            url=str(http_request.url), method=str(http_request.http_method),
+            data=http_request.body, headers=http_request.headers,
+            max_redirects=redirections)
 
-    if info is None:
+    content = await response.content.read()
+    if response.status is None:
         raise RequestError()
+    info = {
+        'status': response.status
+    }
 
     response = Response(info, content, http_request.url)
     _check_response(response)
     return response
 
 
-def make_api_request(http, http_request, retries=7,
-                     redirections=_REDIRECTIONS):
+async def make_api_request(http, http_request, retries=7,
+                           redirections=_REDIRECTIONS):
     """Send an HTTP request via the given http, performing error/retry handling.
 
     :type http: :class:`httplib2.Http`
@@ -380,8 +385,9 @@ def make_api_request(http, http_request, retries=7,
     retry = 0
     while True:
         try:
-            return _make_api_request_no_retry(http, http_request,
-                                              redirections=redirections)
+            resp = await _make_api_request_no_retry(
+                http, http_request, redirections=redirections)
+            return resp
         except _RETRYABLE_EXCEPTIONS as exc:
             retry += 1
             if retry >= retries:

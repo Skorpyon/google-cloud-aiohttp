@@ -14,4 +14,4 @@
 
 # Vendored-in from google-apitools 0.4.11
 
-"""Base ``google.cloud.streaming`` package."""
+"""Base ``aiogoogle.cloud.streaming`` package."""

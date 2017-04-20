@@ -79,7 +79,7 @@ class Client(_ClientFactoryMixin):
     Needs to be set by subclasses.
     """
 
-    def __init__(self, credentials=None, _http=None):
+    def __init__(self, credentials=None, _http=None, loop=None):
         if (credentials is not None and
                 not isinstance(credentials, service_account.Credentials)):
             raise ValueError(_GOOGLE_AUTH_CREDENTIALS_HELP)
@@ -88,6 +88,7 @@ class Client(_ClientFactoryMixin):
         self._credentials = with_scopes_if_required(
             credentials, self.SCOPE)
         self._http_internal = _http
+        self.loop = loop
 
     @property
     def _http(self):
@@ -98,7 +99,7 @@ class Client(_ClientFactoryMixin):
         """
         if self._http_internal is None:
             self._http_internal = AuthorizedAiohttpClientSession(
-                self._credentials)
+                self._credentials, loop=self.loop)
         return self._http_internal
 
 
@@ -129,6 +130,6 @@ class ClientWithProject(Client, _ClientProjectMixin):
              set in the environment.
     """
 
-    def __init__(self, project=None, credentials=None, _http=None):
+    def __init__(self, project=None, credentials=None, _http=None, loop=None):
         _ClientProjectMixin.__init__(self, project=project)
-        Client.__init__(self, credentials=credentials, _http=_http)
+        Client.__init__(self, credentials=credentials, _http=_http, loop=loop)

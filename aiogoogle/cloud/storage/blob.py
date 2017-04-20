@@ -36,11 +36,12 @@ from google.cloud.credentials import generate_signed_url
 from google.cloud.exceptions import NotFound
 from google.cloud.exceptions import make_exception
 
-from google.cloud.streaming.http_wrapper import Request
-from google.cloud.streaming.http_wrapper import make_api_request
-from google.cloud.streaming.transfer import Download
-from google.cloud.streaming.transfer import RESUMABLE_UPLOAD
-from google.cloud.streaming.transfer import Upload
+from aiogoogle.cloud.streaming.http_wrapper import Request
+from aiogoogle.cloud.streaming.transfer import RESUMABLE_UPLOAD
+from aiogoogle.cloud.streaming.transfer import Upload
+
+from aiogoogle.cloud.streaming.transfer import Download
+from aiogoogle.cloud.streaming.http_wrapper import make_api_request
 
 from aiogoogle.cloud.storage._helpers import _PropertyMixin
 from aiogoogle.cloud.storage._helpers import _scalar_property
@@ -369,9 +370,10 @@ class Blob(_PropertyMixin):
         # build_api_url) are also defined on the Batch class, but we just
         # use the wrapped connection since it has all three (http,
         # API_BASE_URL and build_api_url).
-        download.initialize_download(request, client._base_connection.http)
+        await download.initialize_download(request,
+                                           client._base_connection.http)
 
-    def download_to_filename(self, filename, client=None):
+    async def download_to_filename(self, filename, client=None):
         """Download the contents of this blob into a named file.
 
         :type filename: str
@@ -385,12 +387,12 @@ class Blob(_PropertyMixin):
         :raises: :class:`google.cloud.exceptions.NotFound`
         """
         with open(filename, 'wb') as file_obj:
-            self.download_to_file(file_obj, client=client)
+            await self.download_to_file(file_obj, client=client)
 
         mtime = time.mktime(self.updated.timetuple())
         os.utime(file_obj.name, (mtime, mtime))
 
-    def download_as_string(self, client=None):
+    async def download_as_string(self, client=None):
         """Download the contents of this blob as a string.
 
         :type client: :class:`~google.cloud.storage.client.Client` or
@@ -403,10 +405,10 @@ class Blob(_PropertyMixin):
         :raises: :class:`google.cloud.exceptions.NotFound`
         """
         string_buffer = BytesIO()
-        self.download_to_file(string_buffer, client=client)
+        await self.download_to_file(string_buffer, client=client)
         return string_buffer.getvalue()
 
-    def _create_upload(
+    async def _create_upload(
             self, client, file_obj=None, size=None, content_type=None,
             chunk_size=None, strategy=None, extra_headers=None):
         """Helper for upload methods.
@@ -506,7 +508,7 @@ class Blob(_PropertyMixin):
             query_params=query_params)
 
         # Start the upload session
-        response = upload.initialize_upload(request, connection.http)
+        response = await upload.initialize_upload(request, connection.http)
 
         return upload, request, response
 
@@ -520,8 +522,8 @@ class Blob(_PropertyMixin):
             raise make_exception(faux_response, http_response.content,
                                  error_info=request.url)
 
-    def upload_from_file(self, file_obj, rewind=False, size=None,
-                         content_type=None, num_retries=6, client=None):
+    async def upload_from_file(self, file_obj, rewind=False, size=None,
+                               content_type=None, num_retries=6, client=None):
         """Upload the contents of this blob from a file-like object.
 
         The content type of the upload will either be
@@ -614,26 +616,26 @@ class Blob(_PropertyMixin):
                              'pass an explicit size, or supply a chunk size '
                              'for a streaming transfer.')
 
-        upload, request, _ = self._create_upload(
+        upload, request, _ = await self._create_upload(
             client, file_obj=file_obj, size=total_bytes,
             content_type=content_type, chunk_size=chunk_size,
             strategy=strategy)
 
         if upload.strategy == RESUMABLE_UPLOAD:
-            http_response = upload.stream_file(use_chunks=True)
+            http_response = await upload.stream_file(use_chunks=True)
         else:
-            http_response = make_api_request(
+            http_response = await make_api_request(
                 connection.http, request, retries=num_retries)
 
         self._check_response_error(request, http_response)
         response_content = http_response.content
 
-        if not isinstance(response_content,
-                          six.string_types):  # pragma: NO COVER  Python3
+        if not isinstance(response_content, str):
             response_content = response_content.decode('utf-8')
         self._set_properties(json.loads(response_content))
 
-    def upload_from_filename(self, filename, content_type=None, client=None):
+    async def upload_from_filename(self, filename,
+                                   content_type=None, client=None):
         """Upload this blob's contents from the content of a named file.
 
         The content type of the upload will either be
@@ -668,10 +670,11 @@ class Blob(_PropertyMixin):
             content_type, _ = mimetypes.guess_type(filename)
 
         with open(filename, 'rb') as file_obj:
-            self.upload_from_file(
+            await self.upload_from_file(
                 file_obj, content_type=content_type, client=client)
 
-    def upload_from_string(self, data, content_type='text/plain', client=None):
+    async def upload_from_string(self, data,
+                                 content_type='text/plain', client=None):
         """Upload contents of this blob from the provided string.
 
         .. note::
@@ -698,15 +701,15 @@ class Blob(_PropertyMixin):
         :param client: Optional. The client to use.  If not passed, falls back
                        to the ``client`` stored on the blob's bucket.
         """
-        if isinstance(data, six.text_type):
+        if isinstance(data, str):
             data = data.encode('utf-8')
         string_buffer = BytesIO()
         string_buffer.write(data)
-        self.upload_from_file(
+        await self.upload_from_file(
             file_obj=string_buffer, rewind=True, size=len(data),
             content_type=content_type, client=client)
 
-    def create_resumable_upload_session(
+    async def create_resumable_upload_session(
             self,
             content_type=None,
             size=None,
@@ -782,7 +785,7 @@ class Blob(_PropertyMixin):
             # determines the origins allowed for CORS.
             extra_headers['Origin'] = origin
 
-        _, _, start_response = self._create_upload(
+        _, _, start_response = await self._create_upload(
             client,
             size=size,
             content_type=content_type,
@@ -795,7 +798,7 @@ class Blob(_PropertyMixin):
 
         return resumable_upload_session_url
 
-    def make_public(self, client=None):
+    async def make_public(self, client=None):
         """Make this blob public giving all users read access.
 
         :type client: :class:`~google.cloud.storage.client.Client` or
@@ -804,9 +807,9 @@ class Blob(_PropertyMixin):
                        to the ``client`` stored on the blob's bucket.
         """
         self.acl.all().grant_read()
-        self.acl.save(client=client)
+        await self.acl.save(client=client)
 
-    def compose(self, sources, client=None):
+    async def compose(self, sources, client=None):
         """Concatenate source blobs into this one.
 
         :type sources: list of :class:`Blob`
@@ -827,12 +830,12 @@ class Blob(_PropertyMixin):
             'sourceObjects': [{'name': source.name} for source in sources],
             'destination': self._properties.copy(),
         }
-        api_response = client._connection.api_request(
+        api_response = await client._connection.api_request(
             method='POST', path=self.path + '/compose', data=request,
             _target_object=self)
         self._set_properties(api_response)
 
-    def rewrite(self, source, token=None, client=None):
+    async def rewrite(self, source, token=None, client=None):
         """Rewrite source blob into this one.
 
         :type source: :class:`Blob`
@@ -865,7 +868,7 @@ class Blob(_PropertyMixin):
         else:
             query_params = {}
 
-        api_response = client._connection.api_request(
+        api_response = await client._connection.api_request(
             method='POST', path=source.path + '/rewriteTo' + self.path,
             query_params=query_params, data=self._properties, headers=headers,
             _target_object=self)
@@ -881,7 +884,7 @@ class Blob(_PropertyMixin):
 
         return api_response['rewriteToken'], rewritten, size
 
-    def update_storage_class(self, new_class, client=None):
+    async def update_storage_class(self, new_class, client=None):
         """Update blob's storage class via a rewrite-in-place.
 
         See:
@@ -902,7 +905,7 @@ class Blob(_PropertyMixin):
         headers.update(_get_encryption_headers(
             self._encryption_key, source=True))
 
-        api_response = client._connection.api_request(
+        api_response = await client._connection.api_request(
             method='POST', path=self.path + '/rewriteTo' + self.path,
             data={'storageClass': new_class}, headers=headers,
             _target_object=self)

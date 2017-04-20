@@ -16,9 +16,17 @@
 
 import logging
 
+import ujson as json
 import aiohttp
+from aiohttp import http
+from aiohttp.client_reqrep import ClientRequest, ClientResponse
+from aiohttp.client_ws import ClientWebSocketResponse
 
 from google.auth import transport
+
+
+__all__ = ['AuthorizedAiohttpClientSession', ]
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,20 +63,25 @@ class AuthorizedAiohttpClientSession(aiohttp.ClientSession):
                  max_refresh_attempts=transport.DEFAULT_MAX_REFRESH_ATTEMPTS,
                  connector=None, loop=None, cookies=None,
                  headers=None, skip_auto_headers=None,
-                 auth=None, request_class=aiohttp.client_reqrep.ClientRequest,
-                 response_class=aiohttp.client_reqrep.ClientResponse,
-                 ws_response_class=aiohttp.client_ws.ClientWebSocketResponse,
-                 version=aiohttp.HttpVersion11,
-                 cookie_jar=None, read_timeout=None, time_service=None):
+                 auth=None, json_serialize=json.dumps,
+                 request_class=ClientRequest,
+                 response_class=ClientResponse,
+                 ws_response_class=ClientWebSocketResponse,
+                 version=http.HttpVersion11,
+                 cookie_jar=None, connector_owner=True, raise_for_status=False,
+                 read_timeout=None, conn_timeout=None):
 
         super(AuthorizedAiohttpClientSession, self).__init__(
             connector=connector, loop=loop, cookies=cookies,
             headers=headers, skip_auto_headers=skip_auto_headers,
-            auth=auth, request_class=request_class,
+            auth=auth, json_serialize=json_serialize,
+            request_class=request_class,
             response_class=response_class,
             ws_response_class=ws_response_class,
-            version=version, cookie_jar=cookie_jar, read_timeout=read_timeout,
-            time_service=time_service)
+            version=version,
+            cookie_jar=cookie_jar, connector_owner=connector_owner,
+            raise_for_status=raise_for_status, read_timeout=read_timeout,
+            conn_timeout=conn_timeout)
 
         self.credentials = credentials
         self._refresh_status_codes = refresh_status_codes
@@ -94,7 +107,7 @@ class AuthorizedAiohttpClientSession(aiohttp.ClientSession):
         # and we want to pass the original headers if we recurse.
         request_headers = headers.copy() if headers is not None else {}
 
-        self.credentials.before_request(self, method, url, request_headers)
+        await self.credentials.before_request(self, method, url, request_headers)
 
         response = await super(AuthorizedAiohttpClientSession, self).request(
             method, url, data=data, headers=request_headers, **kwargs)
