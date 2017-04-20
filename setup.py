@@ -46,6 +46,7 @@ setup(
     install_requires=[
         'google-cloud-storage >= 1.0.0, < 2.0dev',
         'ujson==1.35',
+        'asyncio_extras==1.3.0',
         'aiohttp>=2.0.7'
     ],
 )
