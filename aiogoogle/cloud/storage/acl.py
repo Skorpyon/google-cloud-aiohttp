@@ -227,7 +227,7 @@ class ACL(object):
                 if role:
                     yield {'entity': str(entity), 'role': role}
 
-    def entity_from_dict(self, entity_dict):
+    async def entity_from_dict(self, entity_dict):
         """Build an _ACLEntity object from a dictionary of data.
 
         An entity is a mutable object that represents a list of roles
@@ -244,15 +244,15 @@ class ACL(object):
         role = entity_dict['role']
 
         if entity == 'allUsers':
-            entity = self.all()
+            entity = await self.all()
 
         elif entity == 'allAuthenticatedUsers':
-            entity = self.all_authenticated()
+            entity = await self.all_authenticated()
 
         elif '-' in entity:
             entity_type, identifier = entity.split('-', 1)
-            entity = self.entity(entity_type=entity_type,
-                                 identifier=identifier)
+            entity = await self.entity(entity_type=entity_type,
+                                       identifier=identifier)
 
         if not isinstance(entity, _ACLEntity):
             raise ValueError('Invalid dictionary: %s' % entity_dict)
@@ -424,7 +424,8 @@ class ACL(object):
         found = await client._connection.api_request(method='GET', path=path)
         self.loaded = True
         for entry in found.get('items', ()):
-            self.add_entity(self.entity_from_dict(entry))
+            entity = await self.entity_from_dict(entry)
+            await self.add_entity(entity)
 
     async def _save(self, acl, predefined, client):
         """Helper for :meth:`save` and :meth:`save_predefined`.
@@ -450,14 +451,20 @@ class ACL(object):
 
         path = self.save_path
         client = self._require_client(client)
+
+        data = []
+        async for ent in acl:
+            data.append(ent)
+
         result = await client._connection.api_request(
             method='PATCH',
             path=path,
-            data={self._URL_PATH_ELEM: list(acl)},
+            data={self._URL_PATH_ELEM: data},
             query_params=query_params)
         self.entities.clear()
         for entry in result.get(self._URL_PATH_ELEM, ()):
-            self.add_entity(self.entity_from_dict(entry))
+            entity = await self.entity_from_dict(entry)
+            await self.add_entity(entity)
         self.loaded = True
 
     async def save(self, acl=None, client=None):

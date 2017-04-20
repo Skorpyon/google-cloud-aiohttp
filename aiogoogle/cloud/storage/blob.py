@@ -806,7 +806,8 @@ class Blob(_PropertyMixin):
         :param client: Optional. The client to use.  If not passed, falls back
                        to the ``client`` stored on the blob's bucket.
         """
-        self.acl.all().grant_read()
+        all = await self.acl.all()
+        all.grant_read()
         await self.acl.save(client=client)
 
     async def compose(self, sources, client=None):
