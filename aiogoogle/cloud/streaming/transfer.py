@@ -270,7 +270,7 @@ class Download(_Transfer):
             self._set_range_header(http_request, 0, end_byte)
             response = await make_api_request(
                 self.bytes_http or http, http_request)
-            if response.status not in self._ACCEPTABLE_STATUSES:
+            if response.status_code not in self._ACCEPTABLE_STATUSES:
                 raise HttpError.from_response(response)
             self._initial_response = response
             self._set_total(response.info)
@@ -984,7 +984,7 @@ class Upload(_Transfer):
         self._ensure_initialized()
         while not self.complete:
             response = await send_func(self.stream.tell())
-            if response.status in (http_client.OK, http_client.CREATED):
+            if response.status_code in (http_client.OK, http_client.CREATED):
                 self._complete = True
                 break
             self._progress = self._last_byte(response.info['range'])
