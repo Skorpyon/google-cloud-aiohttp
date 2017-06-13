@@ -24,11 +24,21 @@ from aiohttp.client_ws import ClientWebSocketResponse
 
 from google.auth import transport
 
+from aiogoogle.cloud.streaming.stream_slice import StreamSlice
+
 
 __all__ = ['AuthorizedAiohttpClientSession', ]
 
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@aiohttp.streamer
+def file_sender(writer, stream_slice):
+    chunk = stream_slice.read(2**16)
+    while chunk:
+        yield from writer.write(chunk)
+        chunk = stream_slice.read(2**16)
 
 
 class AuthorizedAiohttpClientSession(aiohttp.ClientSession):
@@ -108,6 +118,10 @@ class AuthorizedAiohttpClientSession(aiohttp.ClientSession):
         request_headers = headers.copy() if headers is not None else {}
 
         await self.credentials.before_request(self, method, url, request_headers)
+
+        # Wrap sender for StreamSlice
+        if isinstance(data, StreamSlice):
+            data = file_sender(stream_slice=data)
 
         response = await super(AuthorizedAiohttpClientSession, self).request(
             method, url, data=data, headers=request_headers, **kwargs)

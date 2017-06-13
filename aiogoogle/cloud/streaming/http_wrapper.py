@@ -351,7 +351,12 @@ async def _make_api_request_no_retry(http, http_request,
     if response.status is None:
         raise RequestError()
     info = {
-        'status': response.status
+        'status': response.status,
+        'location': response.headers.get('Location'),
+        'range': response.headers.get('Range'),
+        'X-Guploader-Uploadid': response.headers.get('X-Guploader-Uploadid'),
+        'X-Range-Md5': response.headers.get('X-Range-Md5'),
+        'Content-Length': response.headers.get('Content-Length'),
     }
 
     response = Response(info, content, http_request.url)
