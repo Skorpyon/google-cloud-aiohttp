@@ -21,7 +21,7 @@ currently :mod:`httplib2`.
 import collections
 import logging
 import socket
-import time
+import asyncio
 
 import httplib2
 from http import client as http_client
@@ -404,4 +404,4 @@ async def make_api_request(http, http_request, retries=7,
             _reset_http_connections(http)
             logging.debug('Retrying request to url %s after exception %s',
                           http_request.url, type(exc).__name__)
-            time.sleep(retry_after)
+            await asyncio.sleep(retry_after, loop=http.loop)
