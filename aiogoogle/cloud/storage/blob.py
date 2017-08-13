@@ -350,7 +350,7 @@ class Blob(_PropertyMixin):
         """
         client = self._require_client(client)
         if self.media_link is None:  # not yet loaded
-            self.reload()
+            await self.reload()
 
         download_url = self.media_link
 
@@ -386,7 +386,7 @@ class Blob(_PropertyMixin):
 
         :raises: :class:`google.cloud.exceptions.NotFound`
         """
-        with open(filename, 'wb') as file_obj:
+        async with open(filename, 'wb') as file_obj:
             await self.download_to_file(file_obj, client=client)
 
         mtime = time.mktime(self.updated.timetuple())

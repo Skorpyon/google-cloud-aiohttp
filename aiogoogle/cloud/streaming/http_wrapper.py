@@ -356,7 +356,11 @@ async def _make_api_request_no_retry(http, http_request,
         'range': response.headers.get('Range'),
         'X-Guploader-Uploadid': response.headers.get('X-Guploader-Uploadid'),
         'X-Range-Md5': response.headers.get('X-Range-Md5'),
-        'Content-Length': response.headers.get('Content-Length'),
+        'content-length': response.headers.get('Content-Length'),
+        'content-range': response.headers.get('Content-Range'),
+        'server': response.headers.get('server', ''),
+        'content-type': response.headers.get('Content-Type'),
+        'response_headers': response.headers
     }
 
     response = Response(info, content, http_request.url)
